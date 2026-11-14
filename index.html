@@ -1,0 +1,1774 @@
+<!DOCTYPE html>
+<html lang="ko" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>네모로직 1~4인 스피드 대결 아레나</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=Noto+Sans+KR:wght@400;500;700;900&family=JetBrains+Mono:wght@600;800&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Noto Sans KR"', 'Inter', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      background: radial-gradient(circle at 50% 0%, #1e293b 0%, #090d16 75%);
+      color: #f8fafc;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Nonogram Table & Clues */
+    .nono-table {
+      border-collapse: collapse;
+      margin: 0 auto;
+    }
+
+    .nono-cell {
+      position: relative;
+      cursor: pointer;
+      transition: background-color 0.08s ease, transform 0.06s ease;
+      border: 1px solid #334155;
+      background-color: #0f172a;
+    }
+
+    .nono-cell:hover {
+      filter: brightness(1.22);
+    }
+
+    /* Thick 5x5 divider borders */
+    .thick-right {
+      border-right: 2.5px solid #94a3b8 !important;
+    }
+    .thick-bottom {
+      border-bottom: 2.5px solid #94a3b8 !important;
+    }
+
+    /* Player Fill States */
+    .p1-filled {
+      background: linear-gradient(135deg, #38bdf8, #0284c7) !important;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+    }
+    .p2-filled {
+      background: linear-gradient(135deg, #fb7185, #e11d48) !important;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+    }
+    .p3-filled {
+      background: linear-gradient(135deg, #34d399, #059669) !important;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+    }
+    .p4-filled {
+      background: linear-gradient(135deg, #fbbf24, #d97706) !important;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+    }
+
+    /* X-marked cell */
+    .cell-x::after {
+      content: "✕";
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #64748b;
+      font-weight: 800;
+      line-height: 1;
+      pointer-events: none;
+    }
+
+    /* Completed puzzle highlight */
+    .cell-won-reveal {
+      animation: popScale 0.35s ease forwards;
+      filter: brightness(1.15) saturate(1.2);
+    }
+
+    /* Error shake */
+    .cell-error-flash {
+      animation: errorShake 0.35s ease;
+      background-color: rgba(239, 68, 68, 0.45) !important;
+    }
+
+    /* Keyboard focus cursor outlines */
+    .cursor-p1 {
+      outline: 2.5px solid #38bdf8 !important;
+      outline-offset: -2px;
+      z-index: 10;
+    }
+    .cursor-p2 {
+      outline: 2.5px solid #fb7185 !important;
+      outline-offset: -2px;
+      z-index: 10;
+    }
+
+    /* Clues styling */
+    .clue-col {
+      vertical-align: bottom;
+      text-align: center;
+      padding: 3px 2px;
+      background-color: #1e293b;
+      border: 1px solid #334155;
+      color: #e2e8f0;
+      font-family: 'JetBrains Mono', monospace;
+      line-height: 1.15;
+    }
+
+    .clue-row {
+      text-align: right;
+      vertical-align: middle;
+      padding: 2px 6px;
+      background-color: #1e293b;
+      border: 1px solid #334155;
+      color: #e2e8f0;
+      font-family: 'JetBrains Mono', monospace;
+      white-space: nowrap;
+    }
+
+    .clue-done {
+      color: #475569 !important;
+      background-color: #0f172a !important;
+      text-decoration: line-through;
+    }
+
+    @keyframes popScale {
+      0% { transform: scale(0.88); }
+      50% { transform: scale(1.06); }
+      100% { transform: scale(1); }
+    }
+
+    @keyframes errorShake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-4px); }
+      75% { transform: translateX(4px); }
+    }
+  </style>
+</head>
+<body class="p-2 sm:p-4 flex flex-col gap-3">
+
+  <!-- ========================================================= -->
+  <!-- TOP HEADER & MODE SWITCHER                                -->
+  <!-- ========================================================= -->
+  <header class="max-w-[1600px] w-full mx-auto bg-slate-900/95 border border-slate-800 rounded-2xl px-3 py-2.5 sm:px-5 shadow-xl flex flex-wrap items-center justify-between gap-2">
+    <div class="flex items-center gap-2.5">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center shadow-md shadow-sky-500/20">
+        <i class="fa-solid fa-table-cells-large text-white text-base"></i>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-sm sm:text-lg font-black tracking-tight text-white">네모로직 1~4인 스피드 대결</h1>
+          <span class="px-2 py-0.5 text-[10px] font-extrabold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+            3×3 · 4×4 저학년 맞춤 탑재
+          </span>
+        </div>
+        <p class="text-[11px] text-slate-400 hidden sm:block">
+          누군가 먼저 풀어도 화면을 가리지 않고, 각자 보드에 작은 승리/순위 배지만 표시됩니다.
+        </p>
+      </div>
+    </div>
+
+    <!-- Mode Tabs -->
+    <div class="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+      <button id="tab-arena" onclick="switchViewMode('arena')" class="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-sky-500 text-slate-950 shadow transition">
+        ⚡ 1~4인 배틀 아레나
+      </button>
+      <button id="tab-external" onclick="switchViewMode('external')" class="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition">
+        🖥️ 원본 사이트(nemo-logic) 분할 뷰
+      </button>
+    </div>
+
+    <!-- Sound & Help -->
+    <div class="flex items-center gap-1.5">
+      <button id="btn-sound" onclick="toggleSound()" class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 transition" title="효과음 켜기/끄기">
+        <i id="sound-icon" class="fa-solid fa-volume-high text-sky-400"></i>
+      </button>
+      <a href="https://kangsungmin11.github.io/nemo-logic/" target="_blank" rel="noopener noreferrer" class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700 transition flex items-center gap-1">
+        <span>원본 열기</span>
+        <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+      </a>
+    </div>
+  </header>
+
+  <!-- ========================================================= -->
+  <!-- CONTROL BAR (PLAYERS, GRID SIZE, RELAY, BOTS, NEW MATCH)  -->
+  <!-- ========================================================= -->
+  <section id="arena-controls" class="max-w-[1600px] w-full mx-auto bg-slate-900/90 border border-slate-800 rounded-2xl p-2.5 sm:p-3.5 shadow-lg flex flex-wrap items-center justify-between gap-2.5">
+    <!-- Left Controls: Player Count & Grid Size -->
+    <div class="flex flex-wrap items-center gap-2">
+      <!-- 1P ~ 4P Selector -->
+      <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
+        <span class="text-[11px] font-bold text-slate-400 px-2">인원</span>
+        <button id="pcount-1" onclick="setPlayerCount(1)" class="px-2.5 py-1 rounded-lg text-xs font-extrabold transition text-slate-400 hover:text-white">1인</button>
+        <button id="pcount-2" onclick="setPlayerCount(2)" class="px-2.5 py-1 rounded-lg text-xs font-extrabold transition text-slate-400 hover:text-white">2인</button>
+        <button id="pcount-3" onclick="setPlayerCount(3)" class="px-2.5 py-1 rounded-lg text-xs font-extrabold transition text-slate-400 hover:text-white">3인</button>
+        <button id="pcount-4" onclick="setPlayerCount(4)" class="px-2.5 py-1 rounded-lg text-xs font-extrabold transition bg-sky-500 text-slate-950">4인</button>
+      </div>
+
+      <!-- Grid Size Selector (3x3, 4x4, 5x5, 10x10) -->
+      <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
+        <span class="text-[11px] font-bold text-slate-400 px-2">크기</span>
+        <button id="size-3" onclick="setGridSize(3)" class="px-2.5 py-1 rounded-lg text-xs font-extrabold transition bg-amber-400 text-slate-950">🔥 3×3</button>
+        <button id="size-4" onclick="setGridSize(4)" class="px-2.5 py-1 rounded-lg text-xs font-extrabold transition text-slate-400 hover:text-white">🐣 4×4</button>
+        <button id="size-5" onclick="setGridSize(5)" class="px-2.5 py-1 rounded-lg text-xs font-extrabold transition text-slate-400 hover:text-white">5×5</button>
+        <button id="size-10" onclick="setGridSize(10)" class="px-2.5 py-1 rounded-lg text-xs font-extrabold transition text-slate-400 hover:text-white">10×10</button>
+      </div>
+
+      <!-- Single vs 3-Stage Relay -->
+      <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
+        <button id="stage-1" onclick="setMatchStages(1)" class="px-2.5 py-1 rounded-lg text-xs font-extrabold transition bg-indigo-500 text-white">단판 승부</button>
+        <button id="stage-3" onclick="setMatchStages(3)" class="px-2.5 py-1 rounded-lg text-xs font-extrabold transition text-slate-400 hover:text-white">🏃 3연속 릴레이</button>
+      </div>
+
+      <!-- Specific Puzzle Picker -->
+      <select id="puzzle-select" onchange="onPuzzleSelectChange(this.value)" class="bg-slate-950 text-slate-200 text-xs font-bold px-2.5 py-1.5 rounded-xl border border-slate-800 focus:outline-none focus:border-sky-500">
+        <option value="random">🎲 랜덤 문제 출제</option>
+      </select>
+    </div>
+
+    <!-- Right Controls: Auto-X, Bot Speed, Layout, New Match -->
+    <div class="flex flex-wrap items-center gap-2">
+      <!-- Auto X toggle -->
+      <label class="flex items-center gap-1.5 bg-slate-950 px-2.5 py-1.5 rounded-xl border border-slate-800 cursor-pointer text-xs font-bold text-slate-300">
+        <input id="chk-auto-x" type="checkbox" checked onchange="autoXEnabled = this.checked" class="accent-sky-400 rounded" />
+        <span>완성 줄 자동 ✕</span>
+      </label>
+
+      <!-- AI Bot Difficulty -->
+      <div class="flex items-center gap-1 bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-800">
+        <span class="text-[11px] font-bold text-slate-400">🤖 봇 속도</span>
+        <select id="bot-speed-select" onchange="setBotSpeed(this.value)" class="bg-transparent text-xs font-extrabold text-amber-300 focus:outline-none">
+          <option value="1100" class="bg-slate-900">느림</option>
+          <option value="650" class="bg-slate-900" selected>보통</option>
+          <option value="350" class="bg-slate-900">빠름</option>
+          <option value="180" class="bg-slate-900">초고속</option>
+        </select>
+      </div>
+
+      <!-- 4P Grid Layout Toggle (2x2 vs 4-Cols) -->
+      <button id="btn-4p-layout" onclick="toggleFourPlayerLayout()" class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 transition">
+        <i class="fa-solid fa-grip"></i> <span id="layout-label">2×2 배치</span>
+      </button>
+
+      <!-- Start / New Puzzle Button -->
+      <button onclick="startNewBattle(true)" class="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/20 flex items-center gap-1.5 transition active:scale-95">
+        <i class="fa-solid fa-play"></i>
+        <span>새 문제 대결 시작</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- ========================================================= -->
+  <!-- LIVE 1~4P RACE TRACK & COMPACT WINNER STATUS              -->
+  <!-- ========================================================= -->
+  <section id="race-status-section" class="max-w-[1600px] w-full mx-auto bg-slate-900/95 border border-slate-800 rounded-2xl p-3 sm:px-4 shadow-xl">
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+      <!-- Current Puzzle & Compact Non-Blocking Winner Badge -->
+      <div class="flex items-center gap-2 flex-wrap">
+        <span id="battle-state-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span id="current-puzzle-badge" class="text-xs sm:text-sm font-extrabold text-white">
+          🔥 3×3 초스피드 대결
+        </span>
+        <span id="match-format-badge" class="px-2 py-0.5 rounded-md text-[11px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">
+          단판 승부
+        </span>
+        <!-- Small inline winner notice (Does not cover boards!) -->
+        <span id="compact-winner-banner" class="hidden items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-500/20 text-amber-300 border border-amber-400/50 shadow-sm">
+        </span>
+      </div>
+
+      <!-- Central Stopwatch & Reset -->
+      <div class="flex items-center gap-2">
+        <div class="flex items-center gap-1.5 bg-slate-950 px-3 py-1 rounded-xl border border-slate-800">
+          <i class="fa-regular fa-clock text-sky-400 text-xs"></i>
+          <span id="battle-timer" class="font-mono text-sm sm:text-base font-black text-white">00:00.0</span>
+        </div>
+        <button onclick="resetSameBattle()" class="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700 transition" title="같은 문제 처음부터 다시 풀기">
+          <i class="fa-solid fa-rotate-left mr-1"></i>재시작
+        </button>
+      </div>
+    </div>
+
+    <!-- 1~4P Progress Bars -->
+    <div id="race-track-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2"></div>
+  </section>
+
+  <!-- ========================================================= -->
+  <!-- MAIN 1~4 PLAYER BATTLE BOARDS                             -->
+  <!-- ========================================================= -->
+  <main id="arena-main-view" class="max-w-[1600px] w-full mx-auto flex-1 flex flex-col gap-3">
+    <div id="boards-grid-container" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+
+    <!-- Keyboard & Control Tips Footer -->
+    <div class="bg-slate-900/80 border border-slate-800/80 rounded-xl px-3.5 py-2 text-[11px] text-slate-400 flex flex-wrap items-center justify-between gap-2">
+      <div class="flex flex-wrap items-center gap-3">
+        <span><strong class="text-sky-400">🖱️ 마우스/터치:</strong> 좌클릭(드래그) = 칠하기 / 우클릭 = ✕ 표시</span>
+        <span><strong class="text-sky-400">⌨️ 1P 키보드:</strong> WASD 이동 + <kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-200">F</kbd> 칠하기 / <kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-200">G</kbd> ✕표시</span>
+        <span><strong class="text-rose-400">⌨️ 2P 키보드:</strong> 방향키 이동 + <kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-200">Enter</kbd> 칠하기 / <kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-200">Shift</kbd> ✕표시</span>
+      </div>
+      <div class="text-slate-400">
+        💡 누군가 먼저 풀어도 <strong class="text-amber-300">작은 승리 배지</strong>만 표시되며 나머지 플레이어는 끝까지 풀 수 있습니다.
+      </div>
+    </div>
+  </main>
+
+  <!-- ========================================================= -->
+  <!-- EXTERNAL ORIGINAL SITE (kangsungmin11.github.io) VIEW     -->
+  <!-- ========================================================= -->
+  <section id="external-main-view" class="hidden max-w-[1600px] w-full mx-auto flex-1 flex-col gap-3">
+    <div class="bg-slate-900/95 border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2">
+        <span class="px-2.5 py-1 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-extrabold">
+          원본 사이트 1~4인 동시 대결 뷰
+        </span>
+        <span class="text-xs text-slate-400">
+          각 창에서 같은 난이도 문제를 고른 뒤 동시에 풀어 먼저 완성한 사람이 <strong class="text-amber-300">[완주 선언]</strong>을 누르세요!
+        </span>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <button onclick="setExternalPlayerCount(1)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200">1인</button>
+        <button onclick="setExternalPlayerCount(2)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200">2인</button>
+        <button onclick="setExternalPlayerCount(3)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200">3인</button>
+        <button onclick="setExternalPlayerCount(4)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200">4인</button>
+        <button onclick="reloadAllExternalFrames()" class="px-3 py-1 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-extrabold">
+          <i class="fa-solid fa-rotate mr-1"></i>전체 새로고침
+        </button>
+      </div>
+    </div>
+
+    <div id="external-frames-grid" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+  </section>
+
+  <!-- Subtle Floating Toast (Non-blocking) -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-50 pointer-events-none flex flex-col gap-1.5 items-end"></div>
+
+  <!-- ========================================================= -->
+  <!-- APPLICATION JAVASCRIPT                                    -->
+  <!-- ========================================================= -->
+  <script>
+    /* -----------------------------------------------------------
+     * 1. PUZZLE DATABASE (3x3, 4x4, 5x5, 10x10)
+     * ----------------------------------------------------------- */
+    const PUZZLE_BANK = {
+      3: [
+        { id: '3-heart', title: '❤️ 미니 하트', grid: [[1,0,1],[1,1,1],[0,1,0]] },
+        { id: '3-cross', title: '➕ 십자가', grid: [[0,1,0],[1,1,1],[0,1,0]] },
+        { id: '3-stairs', title: '🪜 3단 계단', grid: [[0,0,1],[0,1,1],[1,1,1]] },
+        { id: '3-crown', title: '👑 미니 왕관', grid: [[1,0,1],[1,1,1],[1,1,1]] },
+        { id: '3-arrow', title: '🏹 위쪽 화살표', grid: [[0,1,0],[1,1,1],[0,1,0]] },
+        { id: '3-smile', title: '😊 스마일', grid: [[1,0,1],[0,0,0],[1,1,1]] },
+        { id: '3-checker', title: '🏁 체스판', grid: [[1,0,1],[0,1,0],[1,0,1]] },
+        { id: '3-frame', title: '🖼️ 네모 액자', grid: [[1,1,1],[1,0,1],[1,1,1]] },
+        { id: '3-corner', title: '📐 기역자', grid: [[1,1,1],[0,0,1],[0,0,1]] },
+        { id: '3-tshape', title: '🔨 T자 블록', grid: [[1,1,1],[0,1,0],[0,1,0]] },
+        { id: '3-diag', title: '⚡ 번개 대각선', grid: [[1,1,0],[0,1,0],[0,1,1]] },
+        { id: '3-house', title: '🏠 미니 집', grid: [[0,1,0],[1,1,1],[1,0,1]] }
+      ],
+      4: [
+        {
+          id: '4-duck',
+          title: '🐣 아기 오리',
+          grid: [
+            [0,1,1,0],
+            [0,1,1,1],
+            [1,1,1,0],
+            [0,1,1,0]
+          ]
+        },
+        {
+          id: '4-car',
+          title: '🚗 미니 자동차',
+          grid: [
+            [0,1,1,0],
+            [1,1,1,1],
+            [1,1,1,1],
+            [1,0,0,1]
+          ]
+        },
+        {
+          id: '4-boat',
+          title: '⛵ 돛단배',
+          grid: [
+            [0,1,0,0],
+            [0,1,1,0],
+            [1,1,1,1],
+            [0,1,1,0]
+          ]
+        },
+        {
+          id: '4-butterfly',
+          title: '🦋 나비',
+          grid: [
+            [1,0,0,1],
+            [1,1,1,1],
+            [1,1,1,1],
+            [1,0,0,1]
+          ]
+        },
+        {
+          id: '4-tulip',
+          title: '🌷 예쁜 튤립',
+          grid: [
+            [1,0,0,1],
+            [1,1,1,1],
+            [0,1,1,0],
+            [0,1,1,0]
+          ]
+        },
+        {
+          id: '4-house',
+          title: '🏠 우리 집',
+          grid: [
+            [0,1,1,0],
+            [1,1,1,1],
+            [1,0,0,1],
+            [1,1,1,1]
+          ]
+        },
+        {
+          id: '4-umbrella',
+          title: '☂️ 우산',
+          grid: [
+            [0,1,1,0],
+            [1,1,1,1],
+            [0,0,1,0],
+            [0,1,1,0]
+          ]
+        },
+        {
+          id: '4-robot',
+          title: '🤖 로봇 얼굴',
+          grid: [
+            [1,1,1,1],
+            [1,0,0,1],
+            [1,1,1,1],
+            [0,1,1,0]
+          ]
+        },
+        {
+          id: '4-tree',
+          title: '🌳 푸른 나무',
+          grid: [
+            [0,1,1,0],
+            [1,1,1,1],
+            [0,1,1,0],
+            [0,1,1,0]
+          ]
+        },
+        {
+          id: '4-chair',
+          title: '🪑 미니 의자',
+          grid: [
+            [1,0,0,0],
+            [1,0,0,0],
+            [1,1,1,1],
+            [1,0,0,1]
+          ]
+        },
+        {
+          id: '4-stairs',
+          title: '🪜 4단 계단',
+          grid: [
+            [0,0,0,1],
+            [0,0,1,1],
+            [0,1,1,1],
+            [1,1,1,1]
+          ]
+        },
+        {
+          id: '4-gem',
+          title: '💎 반짝 보석',
+          grid: [
+            [0,1,1,0],
+            [1,1,1,1],
+            [1,1,1,1],
+            [0,1,1,0]
+          ]
+        }
+      ],
+      5: [
+        {
+          id: '5-heart',
+          title: '💖 러브 하트',
+          grid: [
+            [0,1,0,1,0],
+            [1,1,1,1,1],
+            [1,1,1,1,1],
+            [0,1,1,1,0],
+            [0,0,1,0,0]
+          ]
+        },
+        {
+          id: '5-plane',
+          title: '✈️ 제트 비행기',
+          grid: [
+            [0,0,1,0,0],
+            [0,1,1,1,0],
+            [1,1,1,1,1],
+            [0,0,1,0,0],
+            [0,1,1,1,0]
+          ]
+        },
+        {
+          id: '5-trophy',
+          title: '🏆 우승 트로피',
+          grid: [
+            [1,1,1,1,1],
+            [0,1,1,1,0],
+            [0,0,1,0,0],
+            [0,0,1,0,0],
+            [0,1,1,1,0]
+          ]
+        },
+        {
+          id: '5-smile',
+          title: '😄 해피 스마일',
+          grid: [
+            [0,1,0,1,0],
+            [0,1,0,1,0],
+            [0,0,0,0,0],
+            [1,0,0,0,1],
+            [0,1,1,1,0]
+          ]
+        },
+        {
+          id: '5-cat',
+          title: '🐱 아기 고양이',
+          grid: [
+            [1,0,0,0,1],
+            [1,1,1,1,1],
+            [1,0,1,0,1],
+            [1,1,1,1,1],
+            [0,1,1,1,0]
+          ]
+        },
+        {
+          id: '5-tree',
+          title: '🌲 소나무',
+          grid: [
+            [0,0,1,0,0],
+            [0,1,1,1,0],
+            [1,1,1,1,1],
+            [0,0,1,0,0],
+            [0,1,1,1,0]
+          ]
+        }
+      ],
+      10: [
+        {
+          id: '10-anchor',
+          title: '⚓ 바다의 닻',
+          grid: [
+            [0,0,0,1,1,1,1,0,0,0],
+            [0,0,0,1,0,0,1,0,0,0],
+            [0,0,0,1,1,1,1,0,0,0],
+            [0,0,0,0,1,1,0,0,0,0],
+            [0,1,1,1,1,1,1,1,1,0],
+            [0,0,0,0,1,1,0,0,0,0],
+            [1,1,0,0,1,1,0,0,1,1],
+            [1,1,1,0,1,1,0,1,1,1],
+            [0,1,1,1,1,1,1,1,1,0],
+            [0,0,1,1,1,1,1,1,0,0]
+          ]
+        },
+        {
+          id: '10-music',
+          title: '🎵 멜로디 음표',
+          grid: [
+            [0,0,0,1,1,1,1,1,1,0],
+            [0,0,0,1,1,1,1,1,1,0],
+            [0,0,0,1,0,0,0,0,1,0],
+            [0,0,0,1,0,0,0,0,1,0],
+            [0,0,0,1,0,0,0,0,1,0],
+            [0,0,0,1,0,0,0,0,1,0],
+            [0,1,1,1,0,0,1,1,1,0],
+            [1,1,1,1,0,1,1,1,1,0],
+            [1,1,1,1,0,1,1,1,1,0],
+            [0,1,1,0,0,0,1,1,0,0]
+          ]
+        },
+        {
+          id: '10-cup',
+          title: '☕ 따뜻한 커피잔',
+          grid: [
+            [0,0,1,0,1,0,1,0,0,0],
+            [0,0,0,1,0,1,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0],
+            [0,1,1,1,1,1,1,1,0,0],
+            [0,1,1,1,1,1,1,1,1,1],
+            [0,1,1,1,1,1,1,1,0,1],
+            [0,1,1,1,1,1,1,1,1,1],
+            [0,0,1,1,1,1,1,0,0,0],
+            [0,0,0,1,1,1,0,0,0,0],
+            [0,1,1,1,1,1,1,1,0,0]
+          ]
+        }
+      ]
+    };
+
+    /* -----------------------------------------------------------
+     * 2. PLAYER THEMES & GLOBAL STATE
+     * ----------------------------------------------------------- */
+    const PLAYER_THEMES = {
+      1: {
+        name: '1P 블루',
+        fillClass: 'p1-filled',
+        border: 'border-sky-500/40',
+        badgeBg: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
+        barGrad: 'from-sky-400 to-blue-600'
+      },
+      2: {
+        name: '2P 로즈',
+        fillClass: 'p2-filled',
+        border: 'border-rose-500/40',
+        badgeBg: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+        barGrad: 'from-rose-400 to-pink-600'
+      },
+      3: {
+        name: '3P 그린',
+        fillClass: 'p3-filled',
+        border: 'border-emerald-500/40',
+        badgeBg: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+        barGrad: 'from-emerald-400 to-teal-600'
+      },
+      4: {
+        name: '4P 골드',
+        fillClass: 'p4-filled',
+        border: 'border-amber-500/40',
+        badgeBg: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+        barGrad: 'from-amber-400 to-orange-500'
+      }
+    };
+
+    let viewMode = 'arena';       // 'arena' | 'external'
+    let playerCount = 4;          // 1 ~ 4
+    let gridSize = 3;             // 3, 5, 10
+    let matchStages = 1;          // 1 (단판) or 3 (3연속 릴레이)
+    let selectedPuzzleId = 'random';
+    let fourPlayerCols = false;   // false: 2x2, true: 4-columns
+    let autoXEnabled = true;
+    let botIntervalMs = 650;
+    let soundEnabled = true;
+
+    let stagePuzzles = [];        // Array of { title, solutionGrid, rowClues, colClues, totalOnes }
+    let finishOrder = [];         // Array of player numbers in order of completion
+    let battleActive = false;
+    let battleWon = false;
+    let battleStartTime = 0;
+    let elapsedMs = 0;
+    let timerInterval = null;
+
+    // Mouse Drag State
+    let isDragging = false;
+    let dragPlayer = null;
+    let dragTargetState = 0;
+
+    // 1P ~ 4P State Objects
+    const players = {};
+    for (let p = 1; p <= 4; p++) {
+      players[p] = {
+        id: p,
+        isBot: false, // 기본값: 모든 플레이어 사람(Human) 모드로 시작
+        wins: 0,
+        stageIndex: 0,
+        board: [],
+        tool: 'fill', // 'fill' | 'x'
+        cursor: { r: 0, c: 0 },
+        overallProgress: 0,
+        finished: false,
+        finishTimeMs: 0,
+        botTimer: null
+      };
+    }
+
+    /* -----------------------------------------------------------
+     * 3. WEB AUDIO SOUND EFFECTS
+     * ----------------------------------------------------------- */
+    let audioCtx = null;
+    function getAudioCtx() {
+      if (!audioCtx) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (AudioContext) audioCtx = new AudioContext();
+      }
+      return audioCtx;
+    }
+
+    function playTone(freq, duration = 0.06, type = 'sine', vol = 0.08) {
+      if (!soundEnabled) return;
+      try {
+        const ctx = getAudioCtx();
+        if (!ctx) return;
+        if (ctx.state === 'suspended') ctx.resume();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        gain.gain.setValueAtTime(vol, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + duration);
+      } catch (e) {}
+    }
+
+    function playClickSound(state) {
+      if (state === 1) playTone(540, 0.05, 'triangle', 0.07);
+      else if (state === 2) playTone(320, 0.04, 'sine', 0.05);
+      else playTone(240, 0.04, 'sine', 0.04);
+    }
+
+    function playStageClearSound() {
+      playTone(587.33, 0.09, 'triangle', 0.1);
+      setTimeout(() => playTone(880, 0.14, 'triangle', 0.12), 80);
+    }
+
+    function playVictoryFanfare() {
+      const notes = [523.25, 659.25, 783.99, 1046.5];
+      notes.forEach((f, idx) => {
+        setTimeout(() => playTone(f, 0.16, 'triangle', 0.12), idx * 80);
+      });
+    }
+
+    function toggleSound() {
+      soundEnabled = !soundEnabled;
+      const icon = document.getElementById('sound-icon');
+      if (icon) {
+        icon.className = soundEnabled
+          ? 'fa-solid fa-volume-high text-sky-400'
+          : 'fa-solid fa-volume-xmark text-slate-500';
+      }
+    }
+
+    /* -----------------------------------------------------------
+     * 4. CLUE CALCULATION & PUZZLE GENERATOR
+     * ----------------------------------------------------------- */
+    function computeLineClues(line) {
+      const clues = [];
+      let count = 0;
+      for (let i = 0; i < line.length; i++) {
+        if (line[i] === 1) {
+          count++;
+        } else if (count > 0) {
+          clues.push(count);
+          count = 0;
+        }
+      }
+      if (count > 0) clues.push(count);
+      return clues.length > 0 ? clues : [0];
+    }
+
+    function buildStagePuzzleObject(rawPuzzle) {
+      const size = rawPuzzle.grid.length;
+      const solutionGrid = rawPuzzle.grid.map(row => [...row]);
+      const rowClues = [];
+      const colClues = [];
+      let totalOnes = 0;
+
+      for (let r = 0; r < size; r++) {
+        rowClues.push(computeLineClues(solutionGrid[r]));
+        for (let c = 0; c < size; c++) {
+          if (solutionGrid[r][c] === 1) totalOnes++;
+        }
+      }
+
+      for (let c = 0; c < size; c++) {
+        const col = [];
+        for (let r = 0; r < size; r++) col.push(solutionGrid[r][c]);
+        colClues.push(computeLineClues(col));
+      }
+
+      return {
+        id: rawPuzzle.id,
+        title: rawPuzzle.title,
+        solutionGrid,
+        rowClues,
+        colClues,
+        totalOnes
+      };
+    }
+
+    function populatePuzzleSelectDropdown() {
+      const sel = document.getElementById('puzzle-select');
+      if (!sel) return;
+      const bank = PUZZLE_BANK[gridSize] || [];
+      sel.innerHTML = `<option value="random">🎲 랜덤 문제 출제 (${gridSize}×${gridSize})</option>`;
+      bank.forEach(item => {
+        const opt = document.createElement('option');
+        opt.value = item.id;
+        opt.textContent = item.title;
+        sel.appendChild(opt);
+      });
+      selectedPuzzleId = 'random';
+    }
+
+    function generateStagePuzzles() {
+      const bank = [...(PUZZLE_BANK[gridSize] || [])];
+      stagePuzzles = [];
+
+      if (selectedPuzzleId !== 'random' && matchStages === 1) {
+        const found = bank.find(p => p.id === selectedPuzzleId) || bank[0];
+        stagePuzzles.push(buildStagePuzzleObject(found));
+        return;
+      }
+
+      // Shuffle bank for random or multi-stage relay
+      for (let i = bank.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [bank[i], bank[j]] = [bank[j], bank[i]];
+      }
+
+      for (let s = 0; s < matchStages; s++) {
+        const chosen = bank[s % bank.length];
+        stagePuzzles.push(buildStagePuzzleObject(chosen));
+      }
+    }
+
+    /* -----------------------------------------------------------
+     * 5. MATCH INITIALIZATION & UI CONTROLS
+     * ----------------------------------------------------------- */
+    function formatTimeMs(ms) {
+      const totalSec = Math.floor(ms / 1000);
+      const mins = String(Math.floor(totalSec / 60)).padStart(2, '0');
+      const secs = String(totalSec % 60).padStart(2, '0');
+      const tenths = Math.floor((ms % 1000) / 100);
+      return `${mins}:${secs}.${tenths}`;
+    }
+
+    function showToast(message) {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+      const el = document.createElement('div');
+      el.className = 'px-3.5 py-2 rounded-xl bg-slate-900/95 border border-amber-400/50 text-xs font-extrabold text-white shadow-lg transition-all duration-300';
+      el.innerHTML = message;
+      container.appendChild(el);
+      setTimeout(() => {
+        el.style.opacity = '0';
+        setTimeout(() => el.remove(), 300);
+      }, 3200);
+    }
+
+    function setPlayerCount(count) {
+      playerCount = count;
+      for (let i = 1; i <= 4; i++) {
+        const btn = document.getElementById(`pcount-${i}`);
+        if (btn) {
+          btn.className = i === count
+            ? 'px-2.5 py-1 rounded-lg text-xs font-extrabold transition bg-sky-500 text-slate-950'
+            : 'px-2.5 py-1 rounded-lg text-xs font-extrabold transition text-slate-400 hover:text-white';
+        }
+      }
+      startNewBattle(false);
+    }
+
+    function setGridSize(size) {
+      gridSize = size;
+      [3, 4, 5, 10].forEach(s => {
+        const btn = document.getElementById(`size-${s}`);
+        if (btn) {
+          btn.className = s === size
+            ? 'px-2.5 py-1 rounded-lg text-xs font-extrabold transition bg-amber-400 text-slate-950'
+            : 'px-2.5 py-1 rounded-lg text-xs font-extrabold transition text-slate-400 hover:text-white';
+        }
+      });
+      populatePuzzleSelectDropdown();
+      startNewBattle(true);
+    }
+
+    function setMatchStages(stages) {
+      matchStages = stages;
+      [1, 3].forEach(st => {
+        const btn = document.getElementById(`stage-${st}`);
+        if (btn) {
+          btn.className = st === stages
+            ? 'px-2.5 py-1 rounded-lg text-xs font-extrabold transition bg-indigo-500 text-white'
+            : 'px-2.5 py-1 rounded-lg text-xs font-extrabold transition text-slate-400 hover:text-white';
+        }
+      });
+      startNewBattle(true);
+    }
+
+    function onPuzzleSelectChange(val) {
+      selectedPuzzleId = val;
+      startNewBattle(true);
+    }
+
+    function setBotSpeed(msVal) {
+      botIntervalMs = Number(msVal) || 650;
+      restartBots();
+    }
+
+    function toggleFourPlayerLayout() {
+      fourPlayerCols = !fourPlayerCols;
+      const lbl = document.getElementById('layout-label');
+      if (lbl) lbl.textContent = fourPlayerCols ? '4열 가로 배치' : '2×2 배치';
+      updateBoardsGridClass();
+    }
+
+    function updateBoardsGridClass() {
+      const grid = document.getElementById('boards-grid-container');
+      if (!grid) return;
+      if (playerCount === 1) {
+        grid.className = 'grid grid-cols-1 max-w-xl mx-auto w-full gap-3';
+      } else if (playerCount === 2) {
+        grid.className = 'grid grid-cols-1 md:grid-cols-2 gap-3';
+      } else if (playerCount === 3) {
+        grid.className = 'grid grid-cols-1 md:grid-cols-3 gap-3';
+      } else {
+        grid.className = fourPlayerCols
+          ? 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5'
+          : 'grid grid-cols-1 md:grid-cols-2 gap-3';
+      }
+    }
+
+    function startNewBattle(regeneratePuzzle = true) {
+      stopAllBots();
+      if (timerInterval) clearInterval(timerInterval);
+
+      if (regeneratePuzzle || stagePuzzles.length === 0) {
+        generateStagePuzzles();
+      }
+
+      finishOrder = [];
+      battleWon = false;
+      battleActive = true;
+      battleStartTime = performance.now();
+      elapsedMs = 0;
+
+      // Hide compact winner banner
+      const compactBanner = document.getElementById('compact-winner-banner');
+      if (compactBanner) {
+        compactBanner.classList.add('hidden');
+        compactBanner.classList.remove('inline-flex');
+        compactBanner.innerHTML = '';
+      }
+
+      const dot = document.getElementById('battle-state-dot');
+      if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse';
+
+      // Update Puzzle Header Badge
+      const firstTitle = stagePuzzles[0] ? stagePuzzles[0].title : `${gridSize}×${gridSize} 퍼즐`;
+      const pBadge = document.getElementById('current-puzzle-badge');
+      if (pBadge) {
+        pBadge.textContent = matchStages > 1
+          ? `🔥 ${gridSize}×${gridSize} 3연속 릴레이 (1R: ${firstTitle})`
+          : `🔥 ${gridSize}×${gridSize} 대결 — ${firstTitle}`;
+      }
+
+      const fBadge = document.getElementById('match-format-badge');
+      if (fBadge) {
+        fBadge.textContent = matchStages > 1 ? `3연속 릴레이` : `단판 승부`;
+      }
+
+      // Reset all 4 players
+      for (let p = 1; p <= 4; p++) {
+        players[p].stageIndex = 0;
+        players[p].board = Array.from({ length: gridSize }, () => Array(gridSize).fill(0));
+        players[p].cursor = { r: 0, c: 0 };
+        players[p].overallProgress = 0;
+        players[p].finished = false;
+        players[p].finishTimeMs = 0;
+      }
+
+      renderArenaBoards();
+      for (let p = 1; p <= playerCount; p++) {
+        evaluatePlayerProgress(p, true);
+      }
+      updateRaceTrackUI();
+
+      // Start central timer
+      timerInterval = setInterval(() => {
+        if (!battleActive) return;
+        elapsedMs = performance.now() - battleStartTime;
+        const timerEl = document.getElementById('battle-timer');
+        if (timerEl) timerEl.textContent = formatTimeMs(elapsedMs);
+      }, 100);
+
+      restartBots();
+    }
+
+    function resetSameBattle() {
+      startNewBattle(false);
+      showToast('🔄 같은 문제로 대결을 다시 시작합니다!');
+    }
+
+    /* -----------------------------------------------------------
+     * 6. RENDERING 1~4 PLAYER BOARDS & CELLS
+     * ----------------------------------------------------------- */
+    function renderArenaBoards() {
+      const container = document.getElementById('boards-grid-container');
+      if (!container) return;
+      updateBoardsGridClass();
+      container.innerHTML = '';
+
+      for (let p = 1; p <= playerCount; p++) {
+        const theme = PLAYER_THEMES[p];
+        const pState = players[p];
+
+        const card = document.createElement('div');
+        card.id = `p${p}-board-card`;
+        card.className = `bg-slate-900/95 border ${theme.border} rounded-2xl p-3 flex flex-col items-center justify-between shadow-xl transition-all`;
+
+        card.innerHTML = `
+          <!-- Player Card Header -->
+          <div class="w-full flex flex-wrap items-center justify-between gap-1.5 pb-2.5 mb-2 border-b border-slate-800">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="px-2 py-0.5 rounded-lg font-black text-xs border ${theme.badgeBg}">
+                ${p}P
+              </span>
+              <span id="p${p}-title-name" class="font-extrabold text-xs sm:text-sm text-white">
+                ${pState.isBot ? `🤖 AI 봇 ${p}P` : theme.name}
+              </span>
+              <span id="p${p}-stage-badge" class="${matchStages > 1 ? 'inline-block' : 'hidden'} px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono font-bold text-[11px] border border-indigo-500/30">
+                1/${matchStages} 라운드
+              </span>
+              <!-- Compact Rank Badge (Shown upon completion without blocking others) -->
+              <span id="p${p}-rank-badge" class="hidden px-2 py-0.5 rounded-full font-black text-[11px] border shadow-sm"></span>
+            </div>
+
+            <!-- Bot Toggle & Tool Controls -->
+            <div class="flex flex-wrap items-center gap-1">
+              <button onclick="togglePlayerBot(${p})" id="p${p}-bot-btn" class="px-2 py-1 rounded-lg text-[11px] font-bold border transition ${
+                pState.isBot
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                  : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+              }">
+                ${pState.isBot ? '🤖 AI 켜짐' : '👤 사람'}
+              </button>
+
+              <button onclick="setPlayerTool(${p}, 'fill')" id="p${p}-tool-fill" class="px-2 py-1 rounded-lg text-[11px] font-bold border transition bg-sky-500 text-slate-950 border-sky-400">
+                ■ 칠하기
+              </button>
+              <button onclick="setPlayerTool(${p}, 'x')" id="p${p}-tool-x" class="px-2 py-1 rounded-lg text-[11px] font-bold border transition bg-slate-800 text-slate-300 border-slate-700">
+                ✕ 표시
+              </button>
+              <button onclick="checkPlayerErrors(${p})" class="px-2 py-1 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700" title="틀리게 칠한 칸 확인">
+                검사
+              </button>
+              <button onclick="clearPlayerBoard(${p})" class="px-2 py-1 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700" title="보드 초기화">
+                초기화
+              </button>
+            </div>
+          </div>
+
+          <!-- Nonogram Table Holder -->
+          <div id="p${p}-table-holder" class="my-1 flex items-center justify-center overflow-x-auto w-full py-1"></div>
+
+          <!-- Player Footer Status -->
+          <div class="w-full flex items-center justify-between text-[11px] text-slate-400 pt-2 mt-1 border-t border-slate-800/80">
+            <span id="p${p}-feedback-msg" class="truncate">퍼즐 진행 중...</span>
+            <span id="p${p}-progress-text" class="font-mono font-extrabold text-slate-200">0%</span>
+          </div>
+        `;
+
+        container.appendChild(card);
+        renderPlayerGridTable(p);
+      }
+    }
+
+    function getCellDimensionPx() {
+      if (gridSize === 3) return playerCount >= 3 ? 52 : 64;
+      if (gridSize === 4) return playerCount >= 3 ? 45 : 56;
+      if (gridSize === 5) return playerCount >= 3 ? 38 : 44;
+      return playerCount >= 3 ? 24 : 28;
+    }
+
+    function renderPlayerGridTable(pNum) {
+      const holder = document.getElementById(`p${pNum}-table-holder`);
+      if (!holder) return;
+      const pState = players[pNum];
+      const stageData = stagePuzzles[pState.stageIndex] || stagePuzzles[0];
+      if (!stageData) return;
+
+      const cellPx = getCellDimensionPx();
+      const fontSizeClue = (gridSize === 3 || gridSize === 4) ? 'text-sm font-black' : gridSize === 5 ? 'text-xs font-extrabold' : 'text-[11px] font-bold';
+
+      const table = document.createElement('table');
+      table.className = 'nono-table shadow-lg';
+      table.oncontextmenu = (e) => e.preventDefault();
+
+      // Top Header Row (Corner + Column Clues)
+      const theadTr = document.createElement('tr');
+      const cornerTh = document.createElement('th');
+      cornerTh.className = 'bg-slate-950 border border-slate-700 px-2 py-1 text-[10px] font-mono text-slate-400';
+      cornerTh.textContent = `${gridSize}×${gridSize}`;
+      theadTr.appendChild(cornerTh);
+
+      for (let c = 0; c < gridSize; c++) {
+        const th = document.createElement('th');
+        th.id = `p${pNum}-col-clue-${c}`;
+        th.className = `clue-col ${fontSizeClue} ${(c + 1) % 5 === 0 && c !== gridSize - 1 ? 'thick-right' : ''}`;
+        th.style.width = `${cellPx}px`;
+        th.innerHTML = stageData.colClues[c].join('<br>');
+        theadTr.appendChild(th);
+      }
+      table.appendChild(theadTr);
+
+      // Grid Rows (Row Clue + Cells)
+      for (let r = 0; r < gridSize; r++) {
+        const tr = document.createElement('tr');
+
+        const rowTh = document.createElement('th');
+        rowTh.id = `p${pNum}-row-clue-${r}`;
+        rowTh.className = `clue-row ${fontSizeClue} ${(r + 1) % 5 === 0 && r !== gridSize - 1 ? 'thick-bottom' : ''}`;
+        rowTh.textContent = stageData.rowClues[r].join(' ');
+        tr.appendChild(rowTh);
+
+        for (let c = 0; c < gridSize; c++) {
+          const td = document.createElement('td');
+          td.id = `p${pNum}-cell-${r}-${c}`;
+          const thickR = (c + 1) % 5 === 0 && c !== gridSize - 1 ? 'thick-right' : '';
+          const thickB = (r + 1) % 5 === 0 && r !== gridSize - 1 ? 'thick-bottom' : '';
+          td.className = `nono-cell ${thickR} ${thickB}`;
+          td.style.width = `${cellPx}px`;
+          td.style.height = `${cellPx}px`;
+          td.style.fontSize = `${Math.max(12, Math.floor(cellPx * 0.48))}px`;
+
+          td.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            handleCellPointerDown(pNum, r, c, e.button);
+          });
+          td.addEventListener('mouseenter', () => {
+            if (isDragging && dragPlayer === pNum) {
+              applyCellState(pNum, r, c, dragTargetState);
+            }
+          });
+          td.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            handleCellPointerDown(pNum, r, c, 0);
+          }, { passive: false });
+
+          tr.appendChild(td);
+        }
+        table.appendChild(tr);
+      }
+
+      holder.innerHTML = '';
+      holder.appendChild(table);
+      refreshPlayerBoardDOM(pNum);
+      updateCursorHighlight(pNum);
+    }
+
+    window.addEventListener('mouseup', () => {
+      isDragging = false;
+      dragPlayer = null;
+    });
+
+    function handleCellPointerDown(pNum, r, c, mouseButton) {
+      if (players[pNum].finished) return;
+
+      const currentVal = players[pNum].board[r][c];
+      let desiredAction = players[pNum].tool;
+      if (mouseButton === 2) desiredAction = 'x';
+
+      let nextState = 0;
+      if (desiredAction === 'fill') {
+        nextState = currentVal === 1 ? 0 : 1;
+      } else {
+        nextState = currentVal === 2 ? 0 : 2;
+      }
+
+      isDragging = true;
+      dragPlayer = pNum;
+      dragTargetState = nextState;
+
+      players[pNum].cursor = { r, c };
+      updateCursorHighlight(pNum);
+      applyCellState(pNum, r, c, nextState);
+    }
+
+    function applyCellState(pNum, r, c, newState) {
+      if (players[pNum].finished) return;
+      const pState = players[pNum];
+      if (pState.board[r][c] === newState) return;
+
+      pState.board[r][c] = newState;
+      playClickSound(newState);
+      updateSingleCellDOM(pNum, r, c);
+      evaluatePlayerProgress(pNum, false);
+    }
+
+    function updateSingleCellDOM(pNum, r, c) {
+      const td = document.getElementById(`p${pNum}-cell-${r}-${c}`);
+      if (!td) return;
+      const val = players[pNum].board[r][c];
+      const fillClass = PLAYER_THEMES[pNum].fillClass;
+
+      td.classList.remove(fillClass, 'cell-x');
+      if (val === 1) td.classList.add(fillClass);
+      else if (val === 2) td.classList.add('cell-x');
+    }
+
+    function refreshPlayerBoardDOM(pNum) {
+      for (let r = 0; r < gridSize; r++) {
+        for (let c = 0; c < gridSize; c++) {
+          updateSingleCellDOM(pNum, r, c);
+        }
+      }
+    }
+
+    function updateCursorHighlight(pNum) {
+      if (pNum > 2) return; // Keyboard cursors for 1P & 2P
+      const cls = pNum === 1 ? 'cursor-p1' : 'cursor-p2';
+      for (let r = 0; r < gridSize; r++) {
+        for (let c = 0; c < gridSize; c++) {
+          const td = document.getElementById(`p${pNum}-cell-${r}-${c}`);
+          if (td) td.classList.remove(cls);
+        }
+      }
+      const { r, c } = players[pNum].cursor;
+      const activeTd = document.getElementById(`p${pNum}-cell-${r}-${c}`);
+      if (activeTd) activeTd.classList.add(cls);
+    }
+
+    /* -----------------------------------------------------------
+     * 7. PROGRESS EVALUATION & NON-BLOCKING VICTORY BADGE
+     * ----------------------------------------------------------- */
+    function arraysEqual(a, b) {
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return false;
+      }
+      return true;
+    }
+
+    function evaluatePlayerProgress(pNum, silent = false) {
+      const pState = players[pNum];
+      const stageData = stagePuzzles[pState.stageIndex];
+      if (!stageData) return;
+
+      // 1. Check row clues & auto-X
+      for (let r = 0; r < gridSize; r++) {
+        const playerRow = pState.board[r].map(v => (v === 1 ? 1 : 0));
+        const rowDone = arraysEqual(computeLineClues(playerRow), stageData.rowClues[r]);
+        const rowClueEl = document.getElementById(`p${pNum}-row-clue-${r}`);
+        if (rowClueEl) rowClueEl.classList.toggle('clue-done', rowDone);
+
+        if (rowDone && autoXEnabled && !silent) {
+          for (let c = 0; c < gridSize; c++) {
+            if (pState.board[r][c] === 0) {
+              pState.board[r][c] = 2;
+              updateSingleCellDOM(pNum, r, c);
+            }
+          }
+        }
+      }
+
+      // 2. Check col clues & auto-X
+      for (let c = 0; c < gridSize; c++) {
+        const playerCol = [];
+        for (let r = 0; r < gridSize; r++) {
+          playerCol.push(pState.board[r][c] === 1 ? 1 : 0);
+        }
+        const colDone = arraysEqual(computeLineClues(playerCol), stageData.colClues[c]);
+        const colClueEl = document.getElementById(`p${pNum}-col-clue-${c}`);
+        if (colClueEl) colClueEl.classList.toggle('clue-done', colDone);
+
+        if (colDone && autoXEnabled && !silent) {
+          for (let r = 0; r < gridSize; r++) {
+            if (pState.board[r][c] === 0) {
+              pState.board[r][c] = 2;
+              updateSingleCellDOM(pNum, r, c);
+            }
+          }
+        }
+      }
+
+      // 3. Calculate progress & verify solution
+      let correctFilled = 0;
+      let wrongFilled = 0;
+
+      for (let r = 0; r < gridSize; r++) {
+        for (let c = 0; c < gridSize; c++) {
+          const isFilled = pState.board[r][c] === 1;
+          const shouldBeFilled = stageData.solutionGrid[r][c] === 1;
+          if (isFilled && shouldBeFilled) correctFilled++;
+          if (isFilled && !shouldBeFilled) wrongFilled++;
+        }
+      }
+
+      const stageRatio = stageData.totalOnes > 0
+        ? Math.max(0, (correctFilled - wrongFilled * 0.5) / stageData.totalOnes)
+        : 0;
+
+      const totalRatio = ((pState.stageIndex + Math.min(1, stageRatio)) / matchStages) * 100;
+      pState.overallProgress = Math.min(99, Math.max(0, Math.round(totalRatio)));
+
+      const progText = document.getElementById(`p${pNum}-progress-text`);
+      if (progText) progText.textContent = `${pState.overallProgress}%`;
+
+      const isStageSolved = (correctFilled === stageData.totalOnes && wrongFilled === 0);
+      if (isStageSolved && !pState.finished) {
+        handlePlayerStageClear(pNum);
+      } else {
+        updateRaceTrackUI();
+      }
+    }
+
+    function handlePlayerStageClear(pNum) {
+      const pState = players[pNum];
+
+      // Multi-stage relay: advance to next round if more stages remain
+      if (pState.stageIndex + 1 < matchStages) {
+        pState.stageIndex++;
+        pState.board = Array.from({ length: gridSize }, () => Array(gridSize).fill(0));
+        playStageClearSound();
+
+        const stBadge = document.getElementById(`p${pNum}-stage-badge`);
+        if (stBadge) stBadge.textContent = `${pState.stageIndex + 1}/${matchStages} 라운드`;
+
+        const msgEl = document.getElementById(`p${pNum}-feedback-msg`);
+        if (msgEl) {
+          msgEl.innerHTML = `<span class="text-sky-400 font-bold">⚡ ${pState.stageIndex}라운드 통과! 다음 문제 출제!</span>`;
+        }
+
+        renderPlayerGridTable(pNum);
+        evaluatePlayerProgress(pNum, true);
+        updateRaceTrackUI();
+        return;
+      }
+
+      // Final Stage Cleared! Player finishes match!
+      pState.finished = true;
+      pState.finishTimeMs = elapsedMs;
+      pState.overallProgress = 100;
+      if (!finishOrder.includes(pNum)) {
+        finishOrder.push(pNum);
+      }
+
+      const rank = finishOrder.indexOf(pNum) + 1;
+      const timeStr = formatTimeMs(pState.finishTimeMs);
+
+      const progText = document.getElementById(`p${pNum}-progress-text`);
+      if (progText) progText.textContent = `100%`;
+
+      // Highlight completed art on this player's board
+      const finalStage = stagePuzzles[pState.stageIndex];
+      for (let r = 0; r < gridSize; r++) {
+        for (let c = 0; c < gridSize; c++) {
+          if (finalStage.solutionGrid[r][c] === 1) {
+            const td = document.getElementById(`p${pNum}-cell-${r}-${c}`);
+            if (td) td.classList.add('cell-won-reveal');
+          }
+        }
+      }
+
+      // Show compact rank badge directly on the player's card (no screen-blocking modal!)
+      const rankBadge = document.getElementById(`p${pNum}-rank-badge`);
+      if (rankBadge) {
+        rankBadge.classList.remove('hidden');
+        if (rank === 1) {
+          rankBadge.className = 'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-black text-[11px] bg-amber-400/20 text-amber-300 border border-amber-400/60 shadow-sm animate-bounce';
+          rankBadge.innerHTML = `🏆 승리! 1위 (${timeStr})`;
+        } else {
+          const medal = rank === 2 ? '🥈 2위' : rank === 3 ? '🥉 3위' : '🏅 4위';
+          rankBadge.className = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold text-[11px] bg-slate-800 text-slate-200 border border-slate-600';
+          rankBadge.innerHTML = `${medal} (${timeStr})`;
+        }
+      }
+
+      const msgEl = document.getElementById(`p${pNum}-feedback-msg`);
+      if (msgEl) {
+        msgEl.innerHTML = rank === 1
+          ? `<span class="text-amber-300 font-black">🏆 1위 승리! (${timeStr}) — 다른 플레이어 진행 중</span>`
+          : `<span class="text-emerald-400 font-bold">✅ ${rank}위 완주 완료! (${timeStr})</span>`;
+      }
+
+      // First player to finish gets the win point & compact top notice
+      if (rank === 1 && !battleWon) {
+        triggerMatchVictory(pNum);
+      } else {
+        playStageClearSound();
+        updateRaceTrackUI();
+      }
+
+      // Stop main timer only when all active players have finished
+      if (finishOrder.length >= playerCount) {
+        battleActive = false;
+        if (timerInterval) clearInterval(timerInterval);
+        stopAllBots();
+      }
+    }
+
+    function triggerMatchVictory(winnerNum) {
+      if (battleWon) return;
+      battleWon = true;
+
+      players[winnerNum].wins++;
+      updateRaceTrackUI();
+      playVictoryFanfare();
+
+      const dot = document.getElementById('battle-state-dot');
+      if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
+
+      const winnerTheme = PLAYER_THEMES[winnerNum];
+      const winnerLabel = players[winnerNum].isBot ? `🤖 AI 봇 ${winnerNum}P` : winnerTheme.name;
+      const winTime = formatTimeMs(players[winnerNum].finishTimeMs || elapsedMs);
+
+      // Highlight winner card border subtly without blocking any boards
+      const winCard = document.getElementById(`p${winnerNum}-board-card`);
+      if (winCard) {
+        winCard.classList.add('ring-2', 'ring-amber-400/80');
+      }
+
+      // Show small inline winner badge in the top race bar
+      const compactBanner = document.getElementById('compact-winner-banner');
+      if (compactBanner) {
+        compactBanner.classList.remove('hidden');
+        compactBanner.classList.add('inline-flex');
+        compactBanner.innerHTML = `<i class="fa-solid fa-trophy text-amber-300"></i> <span>${winnerLabel} 1위 승리! (${winTime})</span>`;
+      }
+
+      showToast(`🏆 ${winnerLabel} 1위 승리! (${winTime}) — 남은 플레이어도 계속 풀 수 있습니다.`);
+    }
+
+    function updateRaceTrackUI() {
+      const container = document.getElementById('race-track-container');
+      if (!container) return;
+
+      const gridColsClass = playerCount === 1
+        ? 'grid-cols-1'
+        : playerCount === 2
+          ? 'grid-cols-1 sm:grid-cols-2'
+          : playerCount === 3
+            ? 'grid-cols-1 sm:grid-cols-3'
+            : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4';
+
+      container.className = `grid ${gridColsClass} gap-2`;
+      container.innerHTML = '';
+
+      // Compute live rankings
+      const activeList = [];
+      for (let p = 1; p <= playerCount; p++) {
+        activeList.push(players[p]);
+      }
+      activeList.sort((a, b) => {
+        if (a.finished && b.finished) return a.finishTimeMs - b.finishTimeMs;
+        if (a.finished) return -1;
+        if (b.finished) return 1;
+        return b.overallProgress - a.overallProgress;
+      });
+
+      const rankMap = {};
+      activeList.forEach((item, idx) => {
+        rankMap[item.id] = idx + 1;
+      });
+
+      for (let p = 1; p <= playerCount; p++) {
+        const theme = PLAYER_THEMES[p];
+        const pState = players[p];
+        const rank = rankMap[p];
+        const isWinner = finishOrder[0] === p;
+        const rankEmoji = isWinner
+          ? '🏆 1위 승리!'
+          : pState.finished
+            ? `✅ ${finishOrder.indexOf(p) + 1}위 완주`
+            : rank === 1 ? '🥇 1위' : rank === 2 ? '🥈 2위' : rank === 3 ? '🥉 3위' : '4위';
+
+        const trackCard = document.createElement('div');
+        trackCard.className = `bg-slate-950/90 border ${isWinner ? 'border-amber-400 ring-1 ring-amber-400/50' : theme.border} rounded-xl p-2.5 flex flex-col gap-1.5`;
+        trackCard.innerHTML = `
+          <div class="flex items-center justify-between text-xs">
+            <div class="flex items-center gap-1.5">
+              <span class="px-1.5 py-0.5 rounded font-black text-[11px] ${theme.badgeBg}">${p}P</span>
+              <span class="font-bold text-slate-200 truncate max-w-[100px]">${pState.isBot ? `🤖 AI 봇 ${p}P` : theme.name}</span>
+              <span class="px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 font-extrabold text-[10px]">${pState.wins}승</span>
+            </div>
+            <div class="flex items-center gap-1.5 font-mono">
+              <span class="text-[11px] font-bold ${isWinner ? 'text-amber-300' : 'text-slate-400'}">${rankEmoji}</span>
+              <strong class="text-xs sm:text-sm text-white">${pState.overallProgress}%</strong>
+            </div>
+          </div>
+          <div class="w-full bg-slate-900 rounded-full h-2.5 p-0.5 border border-slate-800 overflow-hidden">
+            <div class="h-full rounded-full bg-gradient-to-r ${theme.barGrad} transition-all duration-150" style="width: ${pState.overallProgress}%"></div>
+          </div>
+        `;
+        container.appendChild(trackCard);
+      }
+    }
+
+    /* -----------------------------------------------------------
+     * 8. AI BOTS & PLAYER TOOLS
+     * ----------------------------------------------------------- */
+    function stopAllBots() {
+      for (let p = 1; p <= 4; p++) {
+        if (players[p].botTimer) {
+          clearInterval(players[p].botTimer);
+          players[p].botTimer = null;
+        }
+      }
+    }
+
+    function restartBots() {
+      stopAllBots();
+      if (!battleActive) return;
+
+      for (let p = 1; p <= playerCount; p++) {
+        if (players[p].isBot) {
+          // Slight random jitter so multiple bots don't move on the exact same millisecond
+          const jitter = Math.floor(Math.random() * 140) - 70;
+          const interval = Math.max(120, botIntervalMs + jitter);
+
+          players[p].botTimer = setInterval(() => {
+            if (!battleActive || players[p].finished || !players[p].isBot) return;
+            const stageData = stagePuzzles[players[p].stageIndex];
+            if (!stageData) return;
+
+            // Find remaining unsolved cells
+            const candidates = [];
+            for (let r = 0; r < gridSize; r++) {
+              for (let c = 0; c < gridSize; c++) {
+                const cur = players[p].board[r][c];
+                const sol = stageData.solutionGrid[r][c];
+                if (sol === 1 && cur !== 1) {
+                  candidates.push({ r, c, target: 1 });
+                } else if (sol === 0 && cur === 1) {
+                  candidates.push({ r, c, target: 2 });
+                }
+              }
+            }
+
+            if (candidates.length > 0) {
+              const pick = candidates[Math.floor(Math.random() * candidates.length)];
+              applyCellState(p, pick.r, pick.c, pick.target);
+            }
+          }, interval);
+        }
+      }
+    }
+
+    window.togglePlayerBot = function(pNum) {
+      players[pNum].isBot = !players[pNum].isBot;
+      const theme = PLAYER_THEMES[pNum];
+      const titleEl = document.getElementById(`p${pNum}-title-name`);
+      if (titleEl) {
+        titleEl.textContent = players[pNum].isBot ? `🤖 AI 봇 ${pNum}P` : theme.name;
+      }
+      const btn = document.getElementById(`p${pNum}-bot-btn`);
+      if (btn) {
+        btn.className = players[pNum].isBot
+          ? 'px-2 py-1 rounded-lg text-[11px] font-bold border transition bg-amber-500/20 text-amber-300 border-amber-500/40'
+          : 'px-2 py-1 rounded-lg text-[11px] font-bold border transition bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700';
+        btn.textContent = players[pNum].isBot ? '🤖 AI 켜짐' : '👤 사람';
+      }
+      updateRaceTrackUI();
+      restartBots();
+    };
+
+    window.setPlayerTool = function(pNum, tool) {
+      players[pNum].tool = tool;
+      const fillBtn = document.getElementById(`p${pNum}-tool-fill`);
+      const xBtn = document.getElementById(`p${pNum}-tool-x`);
+      if (fillBtn && xBtn) {
+        if (tool === 'fill') {
+          fillBtn.className = 'px-2 py-1 rounded-lg text-[11px] font-bold border transition bg-sky-500 text-slate-950 border-sky-400';
+          xBtn.className = 'px-2 py-1 rounded-lg text-[11px] font-bold border transition bg-slate-800 text-slate-300 border-slate-700';
+        } else {
+          fillBtn.className = 'px-2 py-1 rounded-lg text-[11px] font-bold border transition bg-slate-800 text-slate-300 border-slate-700';
+          xBtn.className = 'px-2 py-1 rounded-lg text-[11px] font-bold border transition bg-rose-500 text-white border-rose-400';
+        }
+      }
+    };
+
+    window.checkPlayerErrors = function(pNum) {
+      if (players[pNum].finished) return;
+      const pState = players[pNum];
+      const stageData = stagePuzzles[pState.stageIndex];
+      if (!stageData) return;
+
+      let errCount = 0;
+      for (let r = 0; r < gridSize; r++) {
+        for (let c = 0; c < gridSize; c++) {
+          if (pState.board[r][c] === 1 && stageData.solutionGrid[r][c] === 0) {
+            errCount++;
+            const td = document.getElementById(`p${pNum}-cell-${r}-${c}`);
+            if (td) {
+              td.classList.add('cell-error-flash');
+              setTimeout(() => td.classList.remove('cell-error-flash'), 450);
+            }
+          }
+        }
+      }
+
+      const msgEl = document.getElementById(`p${pNum}-feedback-msg`);
+      if (msgEl) {
+        msgEl.innerHTML = errCount > 0
+          ? `<span class="text-rose-400 font-bold">⚠️ 잘못 칠한 칸 ${errCount}개 발견!</span>`
+          : `<span class="text-emerald-400 font-bold">✨ 현재까지 오답 없음!</span>`;
+      }
+    };
+
+    window.clearPlayerBoard = function(pNum) {
+      if (players[pNum].finished) return;
+      players[pNum].board = Array.from({ length: gridSize }, () => Array(gridSize).fill(0));
+      refreshPlayerBoardDOM(pNum);
+      evaluatePlayerProgress(pNum, true);
+    };
+
+    /* -----------------------------------------------------------
+     * 9. KEYBOARD CONTROLS FOR 1P (WASD+F/G) & 2P (Arrows+Enter/Shift)
+     * ----------------------------------------------------------- */
+    window.addEventListener('keydown', (e) => {
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+      if (viewMode !== 'arena') return;
+
+      const key = e.key.toLowerCase();
+
+      // 1P Keyboard
+      if (!players[1].finished && !players[1].isBot) {
+        let moved1 = false;
+        if (key === 'w') { players[1].cursor.r = (players[1].cursor.r - 1 + gridSize) % gridSize; moved1 = true; }
+        else if (key === 's') { players[1].cursor.r = (players[1].cursor.r + 1) % gridSize; moved1 = true; }
+        else if (key === 'a') { players[1].cursor.c = (players[1].cursor.c - 1 + gridSize) % gridSize; moved1 = true; }
+        else if (key === 'd') { players[1].cursor.c = (players[1].cursor.c + 1) % gridSize; moved1 = true; }
+        else if (key === 'f') {
+          const { r, c } = players[1].cursor;
+          applyCellState(1, r, c, players[1].board[r][c] === 1 ? 0 : 1);
+        } else if (key === 'g') {
+          const { r, c } = players[1].cursor;
+          applyCellState(1, r, c, players[1].board[r][c] === 2 ? 0 : 2);
+        }
+        if (moved1) updateCursorHighlight(1);
+      }
+
+      // 2P Keyboard
+      if (playerCount >= 2 && !players[2].finished && !players[2].isBot) {
+        let moved2 = false;
+        if (e.key === 'ArrowUp') { e.preventDefault(); players[2].cursor.r = (players[2].cursor.r - 1 + gridSize) % gridSize; moved2 = true; }
+        else if (e.key === 'ArrowDown') { e.preventDefault(); players[2].cursor.r = (players[2].cursor.r + 1) % gridSize; moved2 = true; }
+        else if (e.key === 'ArrowLeft') { e.preventDefault(); players[2].cursor.c = (players[2].cursor.c - 1 + gridSize) % gridSize; moved2 = true; }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); players[2].cursor.c = (players[2].cursor.c + 1) % gridSize; moved2 = true; }
+        else if (e.key === 'Enter') {
+          e.preventDefault();
+          const { r, c } = players[2].cursor;
+          applyCellState(2, r, c, players[2].board[r][c] === 1 ? 0 : 1);
+        } else if (e.key === 'Shift') {
+          e.preventDefault();
+          const { r, c } = players[2].cursor;
+          applyCellState(2, r, c, players[2].board[r][c] === 2 ? 0 : 2);
+        }
+        if (moved2) updateCursorHighlight(2);
+      }
+    });
+
+    /* -----------------------------------------------------------
+     * 10. ORIGINAL SITE (kangsungmin11/nemo-logic) SPLIT VIEW
+     * ----------------------------------------------------------- */
+    let externalCount = 2;
+    let externalFinishOrder = [];
+
+    window.switchViewMode = function(mode) {
+      viewMode = mode;
+      const arenaControls = document.getElementById('arena-controls');
+      const raceSection = document.getElementById('race-status-section');
+      const arenaMain = document.getElementById('arena-main-view');
+      const extMain = document.getElementById('external-main-view');
+      const tabArena = document.getElementById('tab-arena');
+      const tabExt = document.getElementById('tab-external');
+
+      if (mode === 'arena') {
+        arenaControls.classList.remove('hidden');
+        raceSection.classList.remove('hidden');
+        arenaMain.classList.remove('hidden');
+        extMain.classList.add('hidden');
+        extMain.classList.remove('flex');
+        tabArena.className = 'px-3 py-1.5 rounded-lg text-xs font-extrabold bg-sky-500 text-slate-950 shadow transition';
+        tabExt.className = 'px-3 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition';
+        restartBots();
+      } else {
+        stopAllBots();
+        arenaControls.classList.add('hidden');
+        raceSection.classList.add('hidden');
+        arenaMain.classList.add('hidden');
+        extMain.classList.remove('hidden');
+        extMain.classList.add('flex');
+        tabExt.className = 'px-3 py-1.5 rounded-lg text-xs font-extrabold bg-sky-500 text-slate-950 shadow transition';
+        tabArena.className = 'px-3 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition';
+        renderExternalFrames();
+      }
+    };
+
+    window.setExternalPlayerCount = function(cnt) {
+      externalCount = cnt;
+      externalFinishOrder = [];
+      renderExternalFrames();
+    };
+
+    window.reloadAllExternalFrames = function() {
+      externalFinishOrder = [];
+      renderExternalFrames();
+    };
+
+    window.claimExternalFinish = function(pNum) {
+      if (externalFinishOrder.includes(pNum)) return;
+      externalFinishOrder.push(pNum);
+      const rank = externalFinishOrder.indexOf(pNum) + 1;
+      const badge = document.getElementById(`ext-rank-${pNum}`);
+      if (badge) {
+        badge.classList.remove('hidden');
+        badge.textContent = rank === 1 ? '🏆 1위 승리!' : `🥈 ${rank}위 완주`;
+        badge.className = rank === 1
+          ? 'px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-400/20 text-amber-300 border border-amber-400'
+          : 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-800 text-slate-200 border border-slate-600';
+      }
+      if (rank === 1) playVictoryFanfare();
+      else playStageClearSound();
+    };
+
+    function renderExternalFrames() {
+      const grid = document.getElementById('external-frames-grid');
+      if (!grid) return;
+      grid.className = externalCount === 1
+        ? 'grid grid-cols-1 gap-3'
+        : 'grid grid-cols-1 md:grid-cols-2 gap-3';
+      grid.innerHTML = '';
+
+      for (let p = 1; p <= externalCount; p++) {
+        const theme = PLAYER_THEMES[p];
+        const wrap = document.createElement('div');
+        wrap.className = `bg-slate-900 border ${theme.border} rounded-2xl overflow-hidden flex flex-col shadow-xl`;
+        wrap.innerHTML = `
+          <div class="px-3 py-2 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 rounded text-xs font-black ${theme.badgeBg}">${p}P</span>
+              <span class="text-xs font-bold text-white">${theme.name} — 원본 네모로직</span>
+              <span id="ext-rank-${p}" class="hidden"></span>
+            </div>
+            <button onclick="claimExternalFinish(${p})" class="px-2.5 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs transition">
+              🏆 완주 선언
+            </button>
+          </div>
+          <iframe src="https://kangsungmin11.github.io/nemo-logic/" class="w-full h-[520px] bg-white border-0"></iframe>
+        `;
+        grid.appendChild(wrap);
+      }
+    }
+
+    /* -----------------------------------------------------------
+     * 11. BOOTSTRAP ON LOAD
+     * ----------------------------------------------------------- */
+    window.addEventListener('DOMContentLoaded', () => {
+      populatePuzzleSelectDropdown();
+      startNewBattle(true);
+    });
+  </script>
+</body>
+</html>
